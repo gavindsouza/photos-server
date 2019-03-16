@@ -147,7 +147,7 @@ app = Flask(__name__)
 app.config.update(
     ENV='development',
     SECRET_KEY='kaam_bhari',
-    STATIC_FOLDER='static/dist',
+    STATIC_FOLDER='static/src',
     HOST='0.0.0.0',
     DEBUG=True,
     SQLALCHEMY_DATABASE_URI='sqlite:///' + os.path.join(basedir, 'data.sqlite')
@@ -173,19 +173,18 @@ class User(db.Model):
     token = db.Column(db.String(120), unique=True, nullable=False)
 
     # server allotations
-    folder = db.Column(db.String(120), unique=True, nullable=False)
+    folder = db.Column(db.String(120), unique=True, nullable=True)
     alloted_space = db.Column(db.Integer, nullable=False)
 
-    def __init__(self, username, password):
+    def __init__(self, username, password, name):
+        self.name = name
         self.username = username
-        # salt = uuid.uuid4().hex
-        # self.password = hashlib.sha512(password.encode('utf-8') + salt.encode('utf-8')).hexdigest()
         self.password = password
         self.registered_on = datetime.datetime.now()
         self.token = encode_token(self.username)
 
     def __repr__(self):
-        return '<User %r>' % self.username
+        return '<User %r>' % self.name
 
 
 # standards
@@ -251,28 +250,27 @@ def get_authenticated():
             typed_user_name = request.form['username']
             typed_password = request.form['password']
 
-        return storage_space
+            user = User(typed_user_name, typed_password, typed_name)
+            db.session.add(user)
+            db.session.commit()
 
-    return render('index.html', title="Index Page"), storage_space
+            query_result = User.query.filter_by(
+                username=typed_user_name).first()
+            return query_result.token
+
+    return render('index.html'), storage_space
 
 
 @app.route('/api/v1/', methods=['POST', 'GET'])
-def api():
-
-    if request.method == 'POST':
-        prod_name = request.form['prod_name']
-        quantity = request.form['prod_quantity']
-
-        transaction_allowed = False
-
-        if transaction_allowed:
-            return
-
+def api_we_dont_need():
     return
 
 
 # API call definitions
 class UploadImage(Resource):
+    def get(self):
+        return 
+
     def post(self, fname):
         file = request.files['file']
         if file and allowed_file(file.filename):
@@ -282,6 +280,7 @@ class UploadImage(Resource):
             return redirect(url_for('uploaded_file', filename=filename))
         else:
             # return error
-            return {'False'}
+            return {'False': ''}
 
-# api.add_resource(UploadImage, '/api/v1/upload?token=<token_id>')
+
+api.add_resource(UploadImage, '/api/v1/upload?token=<token_id>')
