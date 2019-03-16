@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # imports - standard imports
 import os
 import json
