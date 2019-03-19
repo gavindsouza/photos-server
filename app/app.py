@@ -9,7 +9,7 @@ from app.config import config
 # imports - third party imports
 from flask import Flask, url_for, request, redirect, jsonify
 from flask import render_template as render
-from flask_restful import reqparse, abort, Api, Resource
+# from flask_restful import reqparse, abort, Api, Resource
 from flask_sqlalchemy import SQLAlchemy
 from argon2 import PasswordHasher
 import argon2
@@ -150,19 +150,20 @@ app.config.update(
     STATIC_FOLDER='static/src',
     HOST='0.0.0.0',
     DEBUG=True,
-    SQLALCHEMY_DATABASE_URI='sqlite:///' + os.path.join(basedir, 'data.sqlite')
+    # SQLALCHEMY_DATABASE_URI=os.path.join(basedir, 'data.sqlite')
+    SQLALCHEMY_DATABASE_URI='sqlite:///data.sqlite'
 )
+app.config['MAX_CONTENT_LENGTH'] = 160 * 1024 * 1024 # to be replaced with available disk space on server
 
 db = SQLAlchemy(app)
-api = Api(app)
 
 # setting up password hasher: REF=> https://argon2-cffi.readthedocs.io/en/stable/api.html
 hasher = PasswordHasher()
 
 
 class User(db.Model):
-    __tablename__ = "users"
-
+    __tablename__ = "User"
+    
     # user auth
     username = db.Column(db.String(80), primary_key=True)
     name = db.Column(db.String(120), nullable=True)
@@ -181,10 +182,10 @@ class User(db.Model):
         self.username = username
         self.password = password
         self.registered_on = datetime.datetime.now()
-        self.token = encode_token(self.username)
+        self.token = encode_token(username=self.username)
 
     def __repr__(self):
-        return '<User %r>' % self.name
+        return "<User {} {} {} {}>".format(self.name, self.username, self.password, self.registered_on)
 
 
 # standards
@@ -193,7 +194,7 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def encode_token(self, username):
+def encode_token(username):
     try:
         payload = {
             'iat': datetime.datetime.utcnow(),
@@ -223,17 +224,19 @@ def greeting():
     return 'Hello from the other side'
 
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def get_authenticated():
     if request.method == 'POST':
-        trans_type = request.form['type']
-        if trans_type == 'login':
-            typed_user_name = request.form['username']
-            typed_password = request.form['password']
+        print('request sent:',request.form)
+        trans_type = request.form.get('type')
 
+        if trans_type == 'login':
+            typed_user_name = request.form.get('username')
+            typed_password = request.form.get('password')
+            print(typed_password)
             query_result = User.query.filter_by(
                 username=typed_user_name).first()
-
+            print(query_result)
             if query_result:
                 retrieved_password = query_result.password
                 try:
@@ -244,11 +247,15 @@ def get_authenticated():
 
                 except argon2.exceptions.VerificationError:
                     return {'Invalid': 'Credentials'}
+            else:
+                return {'Invalid': 'Credentials'}
 
         if trans_type == 'register':
-            typed_name = request.form['name']
-            typed_user_name = request.form['username']
-            typed_password = request.form['password']
+            typed_name = request.form.get('name')
+            typed_user_name = request.form.get('username')
+            typed_password = request.form.get('password')
+
+            typed_password = hasher.hash(typed_password)
 
             user = User(typed_user_name, typed_password, typed_name)
             db.session.add(user)
@@ -258,29 +265,25 @@ def get_authenticated():
                 username=typed_user_name).first()
             return query_result.token
 
-    return render('index.html'), storage_space
-
-
-@app.route('/api/v1/', methods=['POST', 'GET'])
-def api_we_dont_need():
-    return
+    return jsonify({'storage_space': storage_space})
 
 
 # API call definitions
-class UploadImage(Resource):
-    def get(self):
-        return 
+@app.route('/api/v1/upload', methods=['POST'])
+def uploadImage():
+    if request.method == 'POST':
+        path = request.form['path']
+        token = request.form['token']
+        file = request.files['media']
 
-    def post(self, fname):
-        file = request.files['file']
-        if file and allowed_file(file.filename):
-            # From flask uploading tutorial
-            filename = werkzeug.secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            return redirect(url_for('uploaded_file', filename=filename))
+        if not os.path.exists(os.path.join(basedir,token)):
+            os.makedirs(os.path.join(basedir,token))
+
+        if allowed_file(path):
+            filename = werkzeug.secure_filename(path)
+            filename = os.path.join(basedir, os.path.join(token, path.split('/')[-1]))
+            file.save(filename)
+
+            return jsonify({'successful': 'true'})
         else:
-            # return error
-            return {'False': ''}
-
-
-api.add_resource(UploadImage, '/api/v1/upload?token=<token_id>')
+            return {'False': '0'}
